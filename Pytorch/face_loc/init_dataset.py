@@ -1,14 +1,11 @@
-from torch.utils.data import Dataset
+
 from PIL import Image
-import scipy.io
 import os
 import csv
 import random
 import cv2
-import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
 import math
-
+import scipy.io
 
 
 class CELEBADriver:
@@ -61,9 +58,6 @@ class CELEBADriver:
         return [self.data[index]["ldmk"]]
 
     def random_init(self):
-        # if input("!!! SERIOUS RANDOM INIT DATASET ALARM !!! type ‘y’ to continue... ") == 'y':
-        #     print("RANDOM SET")
-        #     random.shuffle(self.dataset_index)
         random.shuffle(self.dataset_index)
 
     def get_data(self, i):
@@ -110,9 +104,6 @@ class WFDriver:
         return self.data["face_bbx_list"][self.clas_i_map[clas]][0][index][0]
 
     def random_init(self):
-        # if input("!!! SERIOUS RANDOM INIT DATASET ALARM !!! type ‘y’ to continue... ") == 'y':
-        #     print("RANDOM SET")
-        #     random.shuffle(self.dataset_index)
         random.shuffle(self.dataset_index)
 
     def get_data(self, i):
@@ -121,30 +112,182 @@ class WFDriver:
         return (self.get_file_path(i,j),self.get_face_bbx_list(i,j),None)
             
 
-class MTCDataSet(Dataset):
+class ImgTransform:
+    """
+    Transforms for images
+    We use cv2 for image processing
+    1. Generate face bounding box via landmarks
+    2. Random crop face bounding box 
+        (iou>0.6 for positive, iou<0.2 for negative, 0.2<iou<0.55 for mixed)
+    3. Modify landmarks and bounding box according to the crop
+
+    sample type:
+        l-landmark, p-positive, m-mixed, n-negative
+    """
+
+    def __init__(self, img_path, bbox=None, landmark=None):
+        self.img_path = img_path
+        self.img = cv2.imread(img_path,1)
+        self.bbox = bbox        # [[x,y,w,h]]
+        self.landmark = landmark # [x1,y1,x2,y2,...]
+        self.hight, self.width = self.img.shape[:2]
+
+        if self.landmark != None:
+            #self.update_bbox_via_landmark()
+            self.datatype = "Full Sample" # landmark
+        else:
+            self.datatype = "Bbox Sample" # only bbox
+
+    def update_bbox_via_landmark(self):
+        ceb_landmark = self.landmark
+        # 定位左右眼
+        leye = ceb_landmark[:2]
+        reye = ceb_landmark[2:4]
+
+        # 求解双目距离
+        dis = math.sqrt((abs(leye[0] - reye[0])**2) + (abs(leye[1] - reye[1])**2))
+        dis = dis//1
+
+        # 求解 嘴部图像最低点
+        lower = min(ceb_landmark[-1], ceb_landmark[-3])
+
+        # 硬编码 面部关系
+        x = leye[0] - dis//1.5
+        y = leye[1] - dis
+        w = dis*2.5
+        h = lower - y + dis
+        
+        bbox = [int(x) for x in [x,y,w,h]]
+        self.bbox = bbox
+        #show_img(ceb_img, [bbox], None)
+
+    def cal_iou(self, boxA, boxB):
+        # 计算两个边界框的坐标
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
     
-    def __init__(self, wfdd, ceba, split = [] ,transform = None):
+        # 计算交集的面积
+        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    
+        # 计算两个边界框的面积
+        boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+        boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    
+        # 计算并集的面积
+        iou = interArea / float(boxAArea + boxBArea - interArea)
+    
+        # 返回计算出的IoU值
+        return iou
+    
+    def random_cut(self, sample_type, bbox):
+        """
+        sample type here only has three types: p, m, n
+        because Landmark not considered here
+        p - positive, m - mixed, n - negative
+        iou threshold: p>0.6, n<0.2, m-0.2~0.55
+        """
+
+        if sample_type == "p":
+            change_step = max(bbox[2],bbox[3])//2
+        elif sample_type == "m":
+            change_step = max(bbox[2],bbox[3])*2
+        else:
+            change_step = self.hight//3
+
+        count = 0
+        while True:
+            count += 1
+            if count > 1000:
+                raise Exception("1000 times search fail")
+                
+            # 先随机生成两个轴向的偏移量
+            nx_shift = random.randint(-1,1) * random.randint(0,change_step)
+            ny_shift = random.randint(-1,1) * random.randint(0,change_step)
+            nx = bbox[0] + nx_shift
+            ny = bbox[1] + ny_shift
+            nw = bbox[2] + random.randint(-1,1) * random.randint(0,15)
+            nh = bbox[3] + random.randint(-1,1) * random.randint(0,15)
+
+            # 裁剪安全检查
+            if nx>=0 and ny>=0 and\
+                (nx+nw)<=self.width and (ny+nh)<=self.hight:
+
+                iou = self.cal_iou(bbox, [nx,ny,nx+nw,ny+nh])
+                if sample_type == "p" and iou > 0.6:
+                    return [nx,ny,nw,nh]
+                if sample_type == "n" and iou < 0.2:
+                    return [nx,ny,nw,nh]
+                if sample_type == "m" and iou > 0.2 and iou < 0.55:
+                    return [nx,ny,nw,nh]
+    
+
+    def redefine_bbox(self, crop, bbox):
+        # 通过裁剪后的图片和原始bbox，重新定义bbox
+        x = bbox[0] - crop[0]
+        y = bbox[1] - crop[1]
+        w = bbox[2]
+        h = bbox[3]
+        return [x,y,w,h]
+    
+
+    def img_size_check(self, bbox):
+        # 检查裁剪后的边框是否符合要求
+        if bbox[2] < 24 or bbox[3] < 24:
+            return False
+        return True
+
+    def generate_wfd_sample(self):
+
+        sample_list = [] # 生成的样本列表
+        """
+        [
+            [(img,[nbx,nby,nbw,nbh]), xxx, xxx],
+            [positive, mixed, negative],
+            ...
+        ]
+        """
+
+        for bbox in self.bbox:
+
+            sample_trip = [] # 生成的样本列表
+
+            if self.img_size_check(bbox) == False:
+                continue
+
+            # 生成三种样本
+            # p-positive 正样本，用于人脸识别 和 边框检测训练
+            # m-mixed 混合样本，用于人脸识别 和 边框检测训练
+            # n-negative 负样本，用于人脸识别
+            try:
+                for type_of_sample in ["p", "m", "n"]:
+                    nimgb = self.random_cut(type_of_sample, bbox)
+                    nbbox = self.redefine_bbox(nimgb, bbox)
+
+                    nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
+                                   nimgb[0]:nimgb[0]+nimgb[2], :]
+                    
+                    sample_trip.append((nimg, nbbox))
+
+            except Exception as e:
+                print(e)
+                continue
+
+            sample_list.append(sample_trip)
+        
+        return sample_list
+
+    
+
+class BuildDataset:
+    
+    def __init__(self, wfdd, ceba):
         self.wfdd = wfdd
         self.ceba = ceba
         self.wfd_index = wfdd.dataset_index
         self.ceb_index = ceba.dataset_index
-        self.max_index = len(self.wfd_index)
-        self.transform = transform
-        
-        self.shift = 0
-        self.limit = 0
-        if split:
-            self.shift = split[0]
-            self.limit = split[1]
 
-    def _2index(self, index):
-        return index + self.shift
-
-    def __len__(self):
-        if self.shift == 0 and self.limit == 0:
-            return self.max_index
-        else:
-            return self.limit - self.shift
 
     def __getitem__(self, idx):
 
@@ -184,25 +327,6 @@ class MTCDataSet(Dataset):
         # BUG 等比例 缩放 Bbox ，因为 transform 缩放至 12像素时，其他的也要等比例缩放
         return data_trip
 
-    def cal_iou(self, boxA, boxB):
-        # 计算两个边界框的坐标
-        xA = max(boxA[0], boxB[0])
-        yA = max(boxA[1], boxB[1])
-        xB = min(boxA[2], boxB[2])
-        yB = min(boxA[3], boxB[3])
-    
-        # 计算交集的面积
-        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
-    
-        # 计算两个边界框的面积
-        boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-        boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
-    
-        # 计算并集的面积
-        iou = interArea / float(boxAArea + boxBArea - interArea)
-    
-        # 返回计算出的IoU值
-        return iou
 
     def resize_bbox(self, bbox, img_size):
         n_bbox = []
@@ -459,3 +583,5 @@ def get_trp_dataset():
     train_dataset = MTCDataSet(wfd, cead, [10304,12870], transform)
 
     return test_dataset, val_dataset, train_dataset
+
+print("init_dataset.py loaded")
