@@ -219,13 +219,22 @@ class ImgTransform:
                     [bbox[0],bbox[1],bbox[0]+bbox[2],bbox[1]+bbox[3]],
                     [nx,ny,nx+nw,ny+nh])
 
-                if sample_type == "p" and iou > 0.6:
+                if sample_type == "p" and iou >= 0.6:
                     return [nx,ny,nw,nh]
-                if sample_type == "n" and iou < 0.2:
+
+                if sample_type == "m" and iou > 0.2 and iou < 0.6:
                     return [nx,ny,nw,nh]
-                if sample_type == "m" and iou > 0.2 and iou < 0.55:
-                    return [nx,ny,nw,nh]
-    
+                
+                if sample_type == "n" and iou <= 0.2:
+                    # if negative, check if it is covered by other bbox
+                    other_iou = []
+                    for ob in self.bbox:
+                        other_iou.append(self.cal_iou(
+                            [ob[0],ob[1],ob[0]+ob[2],ob[1]+ob[3]],
+                            [nx,ny,nx+nw,ny+nh]))
+                        
+                    if max(other_iou) < 0.2:
+                        return [nx,ny,nw,nh]
 
     def redefine_bbox(self, crop, bbox):
         # 通过裁剪后的图片和原始bbox，重新定义bbox
@@ -346,6 +355,9 @@ class BuildDataset:
 
     def generate_dataset(self):
 
+        faile_count = 0 # 记录失败次数
+        ceb_count = 0 # 记录使用的ceb样本数量
+
         j = 0
         for i in range(len(self.wfd_index)):
 
@@ -356,7 +368,8 @@ class BuildDataset:
             # 生成样本
             img_samples = ImgTransform(wfd_imgp, wfd_bbox).generate_wfd_sample()
             if len(img_samples) == 0:
-                print("No sample generated for {}".format(wfd_imgp))
+                print("WFD No sample generated for {}".format(wfd_imgp))
+                faile_count += 1
                 continue
             
             # ！！！！！！！！！！！！十分重要！！！！！！！！！！！！！
@@ -371,11 +384,12 @@ class BuildDataset:
                 ceb_samples = ImgTransform(ceb_imgp, None, ceb_landmark)\
                     .generate_ceb_sample()
                 if len(ceb_samples) == 0:
-                    print("No sample generated for {}".format(ceb_imgp))
+                    print("CEB No sample generated for {}".format(ceb_imgp))
                     continue
                 
                 img_samples[count-1].append(ceb_samples)
                 count -= 1
+                ceb_count += 1
             
 
             # 保存样本
@@ -390,8 +404,13 @@ class BuildDataset:
 
                 self.write_csv(csv_line)
 
-
-
+        print("\n\n--------Final Report-----------")
+        print("Total failed samples: {}".format(faile_count))
+        print("Total ceb samples used: {}".format(ceb_count))
+        print("Total wfb samples used: {}".format(len(self.wfd_index)))
+        print("Total samples generated: {}".format(self.sample_index // 4))
+        print("number of ceb samples: {}".format(len(self.ceba.dataset_index)))
+        print("-------------------------------\n\n")
 
 bbox_path = r"C:\Users\lucyc\Desktop\celebA\list_bbox_celeba.csv"
 ldmk_path = r"C:\Users\lucyc\Desktop\celebA\list_landmarks_align_celeba.csv"
@@ -408,5 +427,8 @@ cead.random_init()
 wfd.random_init()
 
 
-bds = BuildDataset(wfd, cead, r"C:\Users\lucyc\Desktop\ttds", r"C:\Users\lucyc\Desktop\dataset.csv")
+bds = BuildDataset(wfd, cead, r"C:\Users\lucyc\Desktop\face_loc_d", r"C:\Users\lucyc\Desktop\face_loc_dataset.csv")
 bds.generate_dataset()
+
+# belabelabelabela
+# belabelabelabela
