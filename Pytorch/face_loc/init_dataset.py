@@ -1,5 +1,3 @@
-
-from PIL import Image
 import os
 import csv
 import random
@@ -306,7 +304,8 @@ class ImgTransform:
             print(e)
             return [] # allow empty list
         
-        nlandmark = self.redefine_landmark(nimgb, self.landmark)
+        # only one landmark here for ceb, so landmark[0]
+        nlandmark = self.redefine_landmark(nimgb, self.landmark[0])
 
         nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
                         nimgb[0]:nimgb[0]+nimgb[2], :]
@@ -327,8 +326,16 @@ class BuildDataset:
 
         self.sample_index = 0
 
+
     def write_csv(self, line_elements):
-        with open(self.csv_path, mode='a', encoding='utf-8') as file:
+
+        for i in range(len(line_elements)):
+            if type(line_elements[i]) == list:
+                line_elements[i] = " ".join([str(x) for x in line_elements[i]])
+            else:
+                line_elements[i] = str(line_elements[i])
+
+        with open(self.csv_path, mode='a', encoding='utf-8', newline='') as file:
             csv_writer = csv.writer(file)
             csv_writer.writerow(line_elements)
 
@@ -366,7 +373,7 @@ class BuildDataset:
                 if len(ceb_samples) == 0:
                     print("No sample generated for {}".format(ceb_imgp))
                     continue
-
+                
                 img_samples[count-1].append(ceb_samples)
                 count -= 1
             
