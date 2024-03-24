@@ -13,12 +13,25 @@ class FLCDataset(Dataset):
         self.transform = transform
         self.datalines = self.read_csv_file(csv_dir)
 
+        self.sample_type = 0
+        # 0 positive, 1 mixed, 2 negative, 3 landmark
+
 
     def __len__(self):
         return len(self.datalines)
+    
+
+    def __get_one_on_forth(self):
+        pass
 
 
     def __getitem__(self, idx):
+        # 修复问题，数据集设计，每一次返回 必须是一个图像和一个标签
+        # 缩放标尺计算，缩放bbox和landmark 正确的缩放大小
+        # 对于数据集 加入一个新的维度 用于标注其 数据的类型
+        # 考虑直接从 getitem 中返回一个图像和一个标签
+        # 修改 init dataset 存储数据的方式
+
         # 假设data_info是一个包含图像路径和标签的列表
         data_info = self.datalines[idx]
         
@@ -26,15 +39,30 @@ class FLCDataset(Dataset):
         data_unit = []
         
         for i in range(0, len(data_info), 2):
-            # 读取图像并应用转换（确保转换包含transforms.ToTensor()）
-            img = self.read_img(data_info[i])  # 这应该返回一个Tensor
+            # 读取图像
+            img = self.read_img(data_info[i])
             
             # 处理标签数据
             args_str = data_info[i+1].split()
             args = [int(x) for x in args_str]
-            
+
+            # get the difference between the img size and 224 standard size
+            width, height = img.size
+            x_scale = 224 // width
+            y_scale = 224 // height
+
+            # scale the bbox and landmark
+            for k in range(len(args)):
+                if k % 2 == 0:
+                    args[k] = int(args[k] * x_scale)
+                else:
+                    args[k] = int(args[k] * y_scale)
+
             # 将标签列表转换为Tensor
             labels_tensor = torch.tensor(args, dtype=torch.long)  # 或者使用torch.float32根据需要
+
+            if self.transform:
+                img = self.transform(img)
             
             # 将图像Tensor和标签Tensor添加到data_unit列表
             data_unit.append([img, labels_tensor])
@@ -48,8 +76,6 @@ class FLCDataset(Dataset):
         
     def read_img(self, i):
         img = Image.open(self.to_path(i))
-        if self.transform:
-            img = self.transform(img)
         return img
     
     def read_csv_file(self, file_path):
