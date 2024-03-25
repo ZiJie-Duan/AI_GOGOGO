@@ -384,25 +384,24 @@ class BuildDataset:
                 ceb_samples = ImgTransform(ceb_imgp, None, ceb_landmark)\
                     .generate_ceb_sample()
                 if len(ceb_samples) == 0:
-                    print("CEB No sample generated for {}".format(ceb_imgp))
+                    print("CEB No sample generated for {}".format(ceb_imgp)) 
                     continue
                 
                 img_samples[count-1].append(ceb_samples)
                 count -= 1
                 ceb_count += 1
             
-
             # 保存样本
             # [positive, mixed, negative, landmark]
+            #  0         1      2         3          # 样本类型
+            # 目前使用的策略是 每一行 对应 一个样本
+            # 一个样本具有一个类型，一个图片，一个标签
             for sample_group in img_samples:
-
-                csv_line = []
-                for sample in sample_group:
-                    csv_line += [self.sample_index, sample[1]]
-                    self.save_img(sample[0])
+                for i in range(len(sample_group)):
+                    csv_line = [self.sample_index, sample_group[i][1], i]
+                    self.save_img(sample_group[i][0])
+                    self.write_csv(csv_line)
                     self.sample_index += 1
-
-                self.write_csv(csv_line)
 
         print("\n\n--------Final Report-----------")
         print("Total failed samples: {}".format(faile_count))
