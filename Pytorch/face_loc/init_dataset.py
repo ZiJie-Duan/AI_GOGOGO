@@ -411,6 +411,8 @@ class BuildDataset:
         print("number of ceb samples: {}".format(len(self.ceba.dataset_index)))
         print("-------------------------------\n\n")
 
+
+
 bbox_path = r"C:\Users\lucyc\Desktop\celebA\list_bbox_celeba.csv"
 ldmk_path = r"C:\Users\lucyc\Desktop\celebA\list_landmarks_align_celeba.csv"
 basic_path = r"C:\Users\lucyc\Desktop\celebA\img_align_celeba\img_align_celeba"
@@ -424,7 +426,6 @@ wfd = WFDriver(clas_root_path, mat_path)
 
 cead.random_init()
 wfd.random_init()
-
 
 bds = BuildDataset(wfd, cead, r"C:\Users\lucyc\Desktop\face_loc_d", r"C:\Users\lucyc\Desktop\face_loc_dataset.csv")
 bds.generate_dataset()

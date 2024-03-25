@@ -54,7 +54,7 @@ class FLCDataset(Dataset):
         return lines
 
     def to_path(self, i):
-        path = r"C:\Users\lucyc\Desktop\face_loc_d" + "\\" + str(i) + ".jpg"
+        path = self.img_dir + "\\" + str(i) + ".jpg"
         return path
     
         
