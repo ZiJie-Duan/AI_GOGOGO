@@ -4,14 +4,49 @@ import csv
 import cv2
 import matplotlib.pyplot as plt
 import torch
+from torchvision import transforms
+
+
+IMG_INPUT_SIZE = [12,12]
+
+# 定义转换操作
+transform = transforms.Compose([
+    transforms.Resize(IMG_INPUT_SIZE[0]),
+    transforms.CenterCrop(IMG_INPUT_SIZE[0]),
+    transforms.ToTensor(),  # 将PIL图像或NumPy ndarray转换为FloatTensor。
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],  # 标准化，使用ImageNet的均值和标准差
+                         std=[0.229, 0.224, 0.225])
+])
+
+
+def label_transform(label, img_size):
+    # 目标尺寸
+    nh, nw = IMG_INPUT_SIZE[1], IMG_INPUT_SIZE[0]
+    # 原始尺寸
+    h, w = img_size
+    # 计算缩放比例
+    x_scale = nw / w
+    y_scale = nh / h
+    
+    # 处理标签中的每个坐标
+    transformed_label = []
+    for i, value in enumerate(label):
+        if i % 2 == 0:  # 偶数索引位置，x坐标
+            transformed_label.append(value * x_scale)
+        else:  # 奇数索引位置，y坐标
+            transformed_label.append(value * y_scale)
+            
+    return transformed_label
+
+
 
 class FLCDataset(Dataset):
     
-    def __init__(self, csv_dir, img_dir, transform=None, lable_transform=None):
+    def __init__(self, csv_dir, img_dir):
         self.csv_dir = csv_dir
         self.img_dir = img_dir
         self.transform = transform
-        self.lable_transform = lable_transform
+        self.lable_transform = label_transform
         self.datalines = self.read_csv_file(csv_dir)
 
         self.sample_type = 0
