@@ -206,8 +206,14 @@ class ImgTransform:
             nx = bbox[0] + nx_shift
             ny = bbox[1] + ny_shift
 
-            wh_max = max([bbox[2],bbox[3]])\
-                + random.randint(-1,1) * random.randint(0,10)
+            if sample_type == "n":
+                # 为 负样本提供 更灵活的裁剪
+                wh_max = min([bbox[2],bbox[3]])\
+                    + random.randint(5,self.width//3)
+                nh = wh_max
+            else:
+                wh_max = max([bbox[2],bbox[3]])\
+                    + random.randint(-1,1) * random.randint(0,10)
             nh = wh_max # make sure the crop is square
             nw = wh_max
 
@@ -257,10 +263,10 @@ class ImgTransform:
         """
         [
             [(img,[nbx,nby,nbw,nbh]), xxx, xxx],
-            [positive, mixed, negative],
+            [positive, mixed, negative, negative, negative],
             ...
         ]
-        """
+        """ # 将 负样本 生成多个，增加样本数量，平衡正负样本
 
         for bbox in self.bbox:
 
@@ -273,7 +279,7 @@ class ImgTransform:
             # m-mixed 混合样本，用于人脸识别 和 边框检测训练
             # n-negative 负样本，用于人脸识别
             try:
-                for type_of_sample in ["p", "m", "n"]:
+                for type_of_sample in ["p", "m", "n", "n", "n"]:
                     nimgb = self.random_cut(type_of_sample, bbox)
                     nbbox = self.redefine_bbox(nimgb, bbox)
 
@@ -354,7 +360,7 @@ class BuildDataset:
     
 
     def generate_dataset(self):
-
+        
         faile_count = 0 # 记录失败次数
         ceb_count = 0 # 记录使用的ceb样本数量
 
@@ -373,8 +379,9 @@ class BuildDataset:
                 continue
             
             # ！！！！！！！！！！！！十分重要！！！！！！！！！！！！！
-            # 利用 wfd的数据结构 [positive, mixed, negative] “img_samples”
-            # 在ceb中生成样本 加入到 [positive, mixed, negative, landmark] 中
+            # img_samples 是wfd的样本
+            # 利用 wfd的数据结构 [positive, mixed, negative, negative, negative]
+            # 在ceb中生成样本 加入到 [positive, mixed, negative ..., landmark] 中
 
             count = len(img_samples)
             while count > 0:
@@ -392,11 +399,10 @@ class BuildDataset:
                 ceb_count += 1
             
             # 保存样本
-            # [positive, mixed, negative, landmark]
-            #  0         1      2         3          # 样本类型
-            # 目前使用的策略是 每一行 对应 一个样本
-            # 一个样本具有一个类型，一个图片，一个标签
+            # [positive, mixed, negative, ... ,landmark]
+            #  0         1      2        3 4   5          # 样本类型
             for sample_group in img_samples:
+
                 for i in range(len(sample_group)):
                     csv_line = [self.sample_index, sample_group[i][1], i]
                     self.save_img(sample_group[i][0])
