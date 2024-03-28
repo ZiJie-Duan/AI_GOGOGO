@@ -18,6 +18,50 @@ transform = transforms.Compose([
                          std=[0.229, 0.224, 0.225])
 ])
 
+
+def nms(imgs_list, threshold):
+
+    if imgs_list == []:
+        return []
+
+    imgs_list = sorted(imgs_list, key=lambda x: x[4], reverse=True)
+    max_img = imgs_list[0]
+
+    next_recu_imgs = []
+
+    for i in range(1, len(imgs_list)):
+        if cal_iou_wh(max_img[:4], imgs_list[i][:4]) > threshold:
+            pass
+        else:
+            next_recu_imgs.append(imgs_list[i])
+    
+    return [max_img] + nms(next_recu_imgs, threshold)
+
+
+
+def cal_iou_wh(boxA, boxB):
+        # 计算两个边界框的坐标
+        boxA = [boxA[0], boxA[1], boxA[0] + boxA[2], boxA[1] + boxA[3]]
+        boxB = [boxB[0], boxB[1], boxB[0] + boxB[2], boxB[1] + boxB[3]]
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+    
+        # 计算交集的面积
+        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    
+        # 计算两个边界框的面积
+        boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+        boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    
+        # 计算并集的面积
+        iou = interArea / float(boxAArea + boxBArea - interArea)
+    
+        # 返回计算出的IoU值
+        return iou
+
+
 class PNet(nn.Module):
 
     def __init__(self):
@@ -102,20 +146,22 @@ def sliding_window(image, step_size, window_size, model_trained):
             
 
             window_tensor = transform(image_pil).unsqueeze(0).to(device)
-            x_scale = 12 / w
-            y_scale = 12 / h
+            x_scale = w / 12
+            y_scale = h / 12
 
             with torch.no_grad():
                 face_det, bbox, _ = model_trained(window_tensor)
+
+            #result.append((x, y, window_size[0], window_size[1]))
             
-            if face_det[0][0] - face_det[0][1] > 2:
-                result.append((x, y, window_size[0], window_size[1]))
+            if face_det[0][0] > face_det[0][1]:
+                result.append((x, y, window_size[0], window_size[1], face_det[0][0] - face_det[0][1]))
                 # nx = bbox[0][0].item() * x_scale + x
                 # ny = bbox[0][1].item() * y_scale + y
                 # nw = bbox[0][2].item() * x_scale
                 # nh = bbox[0][3].item() * y_scale
-                # result.append((nx, ny, nw, nh))
-                
+                # result.append((nx, ny, nw, nh, face_det[0][0] - face_det[0][1]))
+            
         
     return result
 
@@ -124,7 +170,7 @@ def sliding_window(image, step_size, window_size, model_trained):
 cap = cv2.VideoCapture(0)  # 0代表计算机的默认摄像头
 
 
-model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\face_loc_p_1.pth")
+model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_2.pth")
 model_trained.eval()  # 设置模型为评估/测试模式
 # face_det, bbox, landmark = model_trained(frame)
 
@@ -138,24 +184,31 @@ while True:
     # 从摄像头读取一帧
     ret, frame = cap.read()
 
+    frame = frame[60:-60, :]
+
     # 如果正确读取帧，ret为True
     if not ret:
         print("Can't receive frame (stream end?). Exiting ...")
         break
 
-    pyramid = generate_image_pyramid(frame)
+    pyramid = generate_image_pyramid(frame, scale_factor=1.5, min_size=(24, 24))
 
     result = []
     for img, scal in pyramid:
-        res = sliding_window(img, step_size=12, window_size=(24, 24), model_trained=model_trained)
+        res = sliding_window(img, step_size=13, window_size=(24, 24), model_trained=model_trained)
         res = [[x*scal for x in y] for y in res]
         result += res
 
+    result = nms(result, 0.3)
 
-    for x, y, w, h in result:
+    for x, y, w, h, score in result:
         x, y, w, h = int(x), int(y), int(w), int(h)
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+        cv2.putText(frame, "Face: {:.2f}".format(score), (x, y+h+10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     # 显示结果帧
+        
+    # 打印边框数量
+    cv2.putText(frame, "Number of faces: {}".format(len(result)), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     cv2.imshow('Frame with Border', frame)
 

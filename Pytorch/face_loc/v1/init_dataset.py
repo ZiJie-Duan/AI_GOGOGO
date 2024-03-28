@@ -285,7 +285,7 @@ class ImgTransform:
 
                     nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
                                    nimgb[0]:nimgb[0]+nimgb[2], :]
-                    
+
                     sample_trip.append((nimg, nbbox))
 
             except Exception as e:
