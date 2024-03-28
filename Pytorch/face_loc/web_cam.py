@@ -50,7 +50,7 @@ class PNet(nn.Module):
         return facedet, bbox, landmark
 
 
-def generate_image_pyramid(img, scale_factor=1.5, min_size=(12, 12)):
+def generate_image_pyramid(img, scale_factor=1.2, min_size=(24, 24)):
     """
     生成图像的金字塔。
     
@@ -61,14 +61,18 @@ def generate_image_pyramid(img, scale_factor=1.5, min_size=(12, 12)):
     """
     pyramid_images = []
     scale_factor_base = 5
+
     while True:
         new_width = int(img.shape[1] / scale_factor_base)
         new_height = int(img.shape[0] / scale_factor_base)
+
         if new_width < min_size[0] or new_height < min_size[1]:
             break
+
         img2 = cv2.resize(img, (new_width, new_height))
         pyramid_images.append([img2, scale_factor_base])
         scale_factor_base *= scale_factor # 可以调整以控制金字塔的级别间隔
+
     return pyramid_images
 
 
@@ -98,12 +102,19 @@ def sliding_window(image, step_size, window_size, model_trained):
             
 
             window_tensor = transform(image_pil).unsqueeze(0).to(device)
+            x_scale = 12 / w
+            y_scale = 12 / h
 
             with torch.no_grad():
                 face_det, bbox, _ = model_trained(window_tensor)
             
             if face_det[0][0] - face_det[0][1] > 2:
                 result.append((x, y, window_size[0], window_size[1]))
+                # nx = bbox[0][0].item() * x_scale + x
+                # ny = bbox[0][1].item() * y_scale + y
+                # nw = bbox[0][2].item() * x_scale
+                # nh = bbox[0][3].item() * y_scale
+                # result.append((nx, ny, nw, nh))
                 
         
     return result
@@ -122,6 +133,7 @@ if not cap.isOpened():
     print("Error: Could not open video.")
     exit()
 
+
 while True:
     # 从摄像头读取一帧
     ret, frame = cap.read()
@@ -135,7 +147,7 @@ while True:
 
     result = []
     for img, scal in pyramid:
-        res = sliding_window(img, step_size=12, window_size=(12, 12), model_trained=model_trained)
+        res = sliding_window(img, step_size=12, window_size=(24, 24), model_trained=model_trained)
         res = [[x*scal for x in y] for y in res]
         result += res
 
@@ -144,6 +156,7 @@ while True:
         x, y, w, h = int(x), int(y), int(w), int(h)
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
     # 显示结果帧
+
     cv2.imshow('Frame with Border', frame)
 
     # 按'q'退出循环
