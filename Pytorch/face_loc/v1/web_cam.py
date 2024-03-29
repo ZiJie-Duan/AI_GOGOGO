@@ -170,7 +170,7 @@ def sliding_window(image, step_size, window_size, model_trained):
 cap = cv2.VideoCapture(0)  # 0代表计算机的默认摄像头
 
 
-model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_2.pth")
+model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_3.pth")
 model_trained.eval()  # 设置模型为评估/测试模式
 # face_det, bbox, landmark = model_trained(frame)
 
@@ -199,7 +199,7 @@ while True:
         res = [[x*scal for x in y] for y in res]
         result += res
 
-    result = nms(result, 0.3)
+    #result = nms(result, 0.3)
 
     for x, y, w, h, score in result:
         x, y, w, h = int(x), int(y), int(w), int(h)
