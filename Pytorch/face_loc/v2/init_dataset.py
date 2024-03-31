@@ -4,7 +4,19 @@ import random
 import cv2
 import math
 import scipy.io
+import numpy as np
 
+def random_color_shift(img):
+
+    img = img.astype(np.int32) # 转换为整数类型
+    # 生成色偏值，例如在-50到50的范围内随机选择
+    bias = np.random.randint(-25, 25, 3) # 对于RGB三个通道
+    # 应用色偏
+    for i in range(3): # 对于每个颜色通道
+        img[:, :, i] = np.clip(img[:, :, i] + bias[i], 1, 254)
+    
+    return img.astype(np.uint8)
+        
 
 class CELEBADriver:
     
@@ -284,8 +296,10 @@ class ImgTransform:
                     nbbox = self.redefine_bbox(nimgb, bbox)
 
                     nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
-                                   nimgb[0]:nimgb[0]+nimgb[2], :]
+                                   nimgb[0]:nimgb[0]+nimgb[2], :].copy()
                     
+                    nimg = random_color_shift(nimg)
+
                     sample_trip.append((nimg, nbbox))
 
             except Exception as e:
@@ -399,9 +413,10 @@ class BuildDataset:
                 ceb_count += 1
             
             # 保存样本
-            # [positive, mixed, negative, landmark]
-            #  1         2      0         3          # 样本类型
+            # [positive, mixed, negative, ... ,landmark]
+            #  0         1      2        3 4   5          # 样本类型
             for sample_group in img_samples:
+
                 for i in range(len(sample_group)):
                     csv_line = [self.sample_index, sample_group[i][1], i]
                     self.save_img(sample_group[i][0])
@@ -421,6 +436,9 @@ class BuildDataset:
 bbox_path = r"C:\Users\lucyc\Desktop\celebA\list_bbox_celeba.csv"
 ldmk_path = r"C:\Users\lucyc\Desktop\celebA\list_landmarks_align_celeba.csv"
 basic_path = r"C:\Users\lucyc\Desktop\celebA\img_align_celeba\img_align_celeba"
+
+# mkdir face_loc_d
+os.makedirs(r"C:\Users\lucyc\Desktop\face_loc_d", exist_ok=True)
 
 cead = CELEBADriver(bbox_path, ldmk_path, basic_path)
 
