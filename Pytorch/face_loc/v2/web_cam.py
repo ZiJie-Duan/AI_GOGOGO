@@ -19,26 +19,6 @@ transform = transforms.Compose([
 ])
 
 
-def nms(imgs_list, threshold):
-
-    if imgs_list == []:
-        return []
-
-    imgs_list = sorted(imgs_list, key=lambda x: x[4], reverse=True)
-    max_img = imgs_list[0]
-
-    next_recu_imgs = []
-
-    for i in range(1, len(imgs_list)):
-        if cal_iou_wh(max_img[:4], imgs_list[i][:4]) > threshold:
-            pass
-        else:
-            next_recu_imgs.append(imgs_list[i])
-    
-    return [max_img] + nms(next_recu_imgs, threshold)
-
-
-
 def cal_iou_wh(boxA, boxB):
         # 计算两个边界框的坐标
         boxA = [boxA[0], boxA[1], boxA[0] + boxA[2], boxA[1] + boxA[3]]
@@ -170,7 +150,7 @@ def sliding_window(image, step_size, window_size, model_trained):
 cap = cv2.VideoCapture(0)  # 0代表计算机的默认摄像头
 
 
-model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_3.pth")
+model_trained = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_2.pth")
 model_trained.eval()  # 设置模型为评估/测试模式
 # face_det, bbox, landmark = model_trained(frame)
 
@@ -191,7 +171,7 @@ while True:
         print("Can't receive frame (stream end?). Exiting ...")
         break
 
-    pyramid = generate_image_pyramid(frame, scale_factor=1.5, min_size=(24, 24))
+    pyramid = generate_image_pyramid(frame, scale_factor=1.2, min_size=(24, 24))
 
     result = []
     for img, scal in pyramid:
@@ -199,7 +179,7 @@ while True:
         res = [[x*scal for x in y] for y in res]
         result += res
 
-    #result = nms(result, 0.3)
+    result = nms(result, 0.3)
 
     for x, y, w, h, score in result:
         x, y, w, h = int(x), int(y), int(w), int(h)
