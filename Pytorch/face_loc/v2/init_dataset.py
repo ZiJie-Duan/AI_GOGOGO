@@ -71,6 +71,28 @@ def random_color_shift(img):
     return img.astype(np.uint8)
 
 
+def cal_iou_wh(boxA, boxB):
+        # 计算两个边界框的坐标
+        boxA = [boxA[0], boxA[1], boxA[0] + boxA[2], boxA[1] + boxA[3]]
+        boxB = [boxB[0], boxB[1], boxB[0] + boxB[2], boxB[1] + boxB[3]]
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+    
+        # 计算交集的面积
+        interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    
+        # 计算两个边界框的面积
+        boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+        boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    
+        # 计算并集的面积
+        iou = interArea / float(boxAArea + boxBArea - interArea)
+    
+        # 返回计算出的IoU值
+        return iou
+
 def nms(imgs_list, threshold):
 
     if imgs_list == []:
@@ -220,6 +242,30 @@ class ImgTransform_R:
             self.datatype = "Full Sample" # landmark
         else:
             self.datatype = "Bbox Sample" # only bbox
+    
+
+    def update_bbox_via_landmark(self):
+        ceb_landmark = self.landmark[0]
+        # 定位左右眼
+        leye = ceb_landmark[:2]
+        reye = ceb_landmark[2:4]
+
+        # 求解双目距离
+        dis = math.sqrt((abs(leye[0] - reye[0])**2) + (abs(leye[1] - reye[1])**2))
+        dis = dis//1
+
+        # 求解 嘴部图像最低点
+        lower = min(ceb_landmark[-1], ceb_landmark[-3])
+
+        # 硬编码 面部关系
+        x = leye[0] - dis//1.5
+        y = leye[1] - dis
+        w = dis*2.5
+        h = lower - y + dis
+        
+        bbox = [int(x) for x in [x,y,w,h]]
+        self.bbox = [bbox]
+        #show_img(ceb_img, [bbox], None)
 
 
     def generate_image_pyramid(self, scale_factor=1.2, min_size=(24, 24)):
@@ -314,6 +360,9 @@ class ImgTransform_R:
         # 返回计算出的IoU值
         return iou
     
+    def int_values(self, values):
+        return [int(x) for x in values]
+    
 
     def gen_r_sample(self):
         # 生成R Net的样本
@@ -334,85 +383,22 @@ class ImgTransform_R:
         for box in self.bbox:
             for x, y, w, h, score in result:
                 iou = self.cal_iou([box[0],box[1],box[0]+box[2],box[1]+box[3]], [x,y,x+w,y+h])
+                x, y, w, h = self.int_values([x, y, w, h])
                 if iou > 0.6:
-                    p_samples.append([x,y,w,h])
+                    p_samples.append(([x,y,w,h],box))
                 elif iou < 0.2:
-                    n_samples.append([x,y,w,h])
+                    n_samples.append(([x,y,w,h],box))
                 elif iou > 0.2 and iou < 0.55:
-                    m_samples.append([x,y,w,h])
+                    m_samples.append(([x,y,w,h],box))
         
-        mid = len(p_samples) + len(n_samples) + len(m_samples) // 33eeeeeeeeeeeeeeeeeeeeee
-        p_samples = random.choices(p_samples, k=min)
-        n_samples = random.choices(n_samples, k=min)
-        m_samples = random.choices(m_samples, k=min)
+        minv = min([len(p_samples), len(n_samples), len(m_samples)])
+        print("p_samples: {}, m_samples: {}, n_samples: {}".format(len(p_samples), len(m_samples), len(n_samples)))
+        p_samples = random.choices(p_samples, k=minv)
+        n_samples = random.choices(n_samples, k=minv)
+        m_samples = random.choices(m_samples, k=minv)
 
         return p_samples, m_samples, n_samples
 
-
-
-    
-    def random_cut(self, sample_type, bbox):
-        """
-        sample type here only has three types: p, m, n
-        because Landmark not considered here
-        p - positive, m - mixed, n - negative
-        iou threshold: p>0.6, n<0.2, m-0.2~0.55
-        """
-
-        if sample_type == "p":
-            change_step = max(bbox[2],bbox[3])//2
-        elif sample_type == "m":
-            change_step = max(bbox[2],bbox[3])*2
-        else:
-            change_step = self.hight//3
-
-        count = 0
-        while True:
-            count += 1
-            if count > 1000:
-                raise Exception("1000 times search fail")
-                
-            # 先随机生成两个轴向的偏移量
-            nx_shift = random.randint(-1,1) * random.randint(0,change_step)
-            ny_shift = random.randint(-1,1) * random.randint(0,change_step)
-            nx = bbox[0] + nx_shift
-            ny = bbox[1] + ny_shift
-
-            if sample_type == "n":
-                # 为 负样本提供 更灵活的裁剪
-                wh_max = min([bbox[2],bbox[3]])\
-                    + random.randint(5,self.width//3)
-                nh = wh_max
-            else:
-                wh_max = max([bbox[2],bbox[3]])\
-                    + random.randint(-1,1) * random.randint(0,10)
-            nh = wh_max # make sure the crop is square
-            nw = wh_max
-
-            # 裁剪安全检查
-            if nx>=0 and ny>=0 and\
-                (nx+nw)<=self.width and (ny+nh)<=self.hight:
-
-                iou = self.cal_iou(
-                    [bbox[0],bbox[1],bbox[0]+bbox[2],bbox[1]+bbox[3]],
-                    [nx,ny,nx+nw,ny+nh])
-
-                if sample_type == "p" and iou >= 0.6:
-                    return [nx,ny,nw,nh]
-
-                if sample_type == "m" and iou > 0.2 and iou < 0.6:
-                    return [nx,ny,nw,nh]
-                
-                if sample_type == "n" and iou <= 0.2:
-                    # if negative, check if it is covered by other bbox
-                    other_iou = []
-                    for ob in self.bbox:
-                        other_iou.append(self.cal_iou(
-                            [ob[0],ob[1],ob[0]+ob[2],ob[1]+ob[3]],
-                            [nx,ny,nx+nw,ny+nh]))
-                        
-                    if max(other_iou) < 0.2:
-                        return [nx,ny,nw,nh]
 
     def redefine_bbox(self, crop, bbox):
         # 通过裁剪后的图片和原始bbox，重新定义bbox
@@ -422,7 +408,6 @@ class ImgTransform_R:
         h = bbox[3]
         return [x,y,w,h]
     
-
     def img_size_check(self, bbox):
         # 检查裁剪后的边框是否符合要求
         if bbox[2] < 24 or bbox[3] < 24:
@@ -440,33 +425,38 @@ class ImgTransform_R:
         ]
         """ # 将 负样本 生成多个，增加样本数量，平衡正负样本
 
-        for bbox in self.bbox:
 
-            sample_trip = [] # 生成的样本列表
-            if self.img_size_check(bbox) == False:
-                continue
+        sample_trip = [] # 生成的样本列表
 
-            # 生成三种样本
-            # p-positive 正样本，用于人脸识别 和 边框检测训练
-            # m-mixed 混合样本，用于人脸识别 和 边框检测训练
-            # n-negative 负样本，用于人脸识别
-            try:
-                for type_of_sample in ["p", "m", "n", "n", "n"]:
-                    nimgb = self.random_cut(type_of_sample, bbox)
-                    nbbox = self.redefine_bbox(nimgb, bbox)
+        # 生成三种样本
+        # p-positive 正样本，用于人脸识别 和 边框检测训练
+        # m-mixed 混合样本，用于人脸识别 和 边框检测训练
+        # n-negative 负样本，用于人脸识别
 
-                    nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
-                                   nimgb[0]:nimgb[0]+nimgb[2], :].copy()
-                    
-                    nimg = random_color_shift(nimg)
+        p_samples, m_samples, n_samples = self.gen_r_sample()
 
-                    sample_trip.append((nimg, nbbox))
+        for i in range(len(p_samples)):
+            
+            # p_samples[i][0] 是裁剪后的边框, p_samples[i][1] 是高度相关边框
+            nbbox = self.redefine_bbox(p_samples[i][0], p_samples[i][1])
+            nimg = self.img[p_samples[i][0][1]:p_samples[i][0][1]+p_samples[i][0][3],
+                            p_samples[i][0][0]:p_samples[i][0][0]+p_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, nbbox))
 
-            except Exception as e:
-                print(e)
-                continue
+            nbbox = self.redefine_bbox(m_samples[i][0], m_samples[i][1])
+            nimg = self.img[m_samples[i][0][1]:m_samples[i][0][1]+m_samples[i][0][3],
+                            m_samples[i][0][0]:m_samples[i][0][0]+m_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, nbbox))
 
-            sample_list.append(sample_trip)
+            nbbox = self.redefine_bbox(n_samples[i][0], n_samples[i][1])
+            nimg = self.img[n_samples[i][0][1]:n_samples[i][0][1]+n_samples[i][0][3],
+                            n_samples[i][0][0]:n_samples[i][0][0]+n_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, nbbox))
+
+        sample_list.append(sample_trip)
         
         return sample_list # allow empty list
     
@@ -482,24 +472,31 @@ class ImgTransform_R:
 
     def generate_ceb_sample(self):
         
-        bbox = self.bbox[0] # only one bbox
+        sample_trip = []
+        p_samples, m_samples, n_samples = self.gen_r_sample()
+        
+        for i in range(len(p_samples)):
 
-        if self.img_size_check(bbox) == False:
-            return [] # allow empty list
-        
-        try:
-            nimgb = self.random_cut("p", bbox)
-        except Exception as e:
-            print(e)
-            return [] # allow empty list
-        
-        # only one landmark here for ceb, so landmark[0]
-        nlandmark = self.redefine_landmark(nimgb, self.landmark[0])
+            # only one landmark here for ceb, so landmark[0]
+            plandmark = self.redefine_landmark(p_samples[i][0], self.landmark[0])
+            nimg = self.img[p_samples[i][0][1]:p_samples[i][0][1]+p_samples[i][0][3],
+                            p_samples[i][0][0]:p_samples[i][0][0]+p_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, p_samples[i][1], plandmark))
+            
+            mlandmark = self.redefine_landmark(m_samples[i][0], self.landmark[0])
+            nimg = self.img[m_samples[i][0][1]:m_samples[i][0][1]+m_samples[i][0][3],
+                            m_samples[i][0][0]:m_samples[i][0][0]+m_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, m_samples[i][1], mlandmark))
 
-        nimg = self.img[nimgb[1]:nimgb[1]+nimgb[3],
-                        nimgb[0]:nimgb[0]+nimgb[2], :]
-        
-        return [nimg, nlandmark] # different from wfd sample
+            nlandmark = self.redefine_landmark(n_samples[i][0], self.landmark[0])
+            nimg = self.img[n_samples[i][0][1]:n_samples[i][0][1]+n_samples[i][0][3],
+                            n_samples[i][0][0]:n_samples[i][0][0]+n_samples[i][0][2], :].copy()
+            nimg = random_color_shift(nimg)
+            sample_trip.append((nimg, n_samples[i][1], nlandmark))
+
+        return sample_trip # allow empty list
     
 
 class BuildDataset:
@@ -531,7 +528,7 @@ class BuildDataset:
     def save_img(self, img):
         path = self.imgs_path + "\\" + str(self.sample_index) + ".jpg"
         cv2.imwrite(path, img)
-    
+
 
     def generate_dataset(self):
         
@@ -541,47 +538,51 @@ class BuildDataset:
         j = 0
         for i in range(len(self.wfd_index)):
 
+            alread_failed = False
+            ceb_count += 1
+
             print("Processing {}/{}".format(i, len(self.wfd_index)))
 
             wfd_imgp, wfd_bbox, _ = self.wfdd.get_data(i)
 
-            # 生成样本
-            img_samples = ImgTransform(wfd_imgp, wfd_bbox).generate_wfd_sample()
-            if len(img_samples) == 0:
-                print("WFD No sample generated for {}".format(wfd_imgp))
+            samples = ImgTransform_R(wfd_imgp,
+                                    wfd_bbox,
+                                    p_net=model_trained)\
+                                    .generate_wfd_sample()
+            
+            if len(samples) == 0:
+                print("Failed to generate sample for {}".format(wfd_imgp))
+                alread_failed = True
+            else:
+                for sample_group in samples:
+                    for i in range(len(sample_group)):
+                        csv_line = [self.sample_index, sample_group[i][1], i]
+                        self.save_img(sample_group[i][0])
+                        self.write_csv(csv_line)
+                        self.sample_index += 1
+
+
+            ceb_imgp, _, ceb_landmark = self.ceba.get_data(j)
+
+            samples = ImgTransform_R(ceb_imgp,
+                                    None,
+                                    ceb_landmark,
+                                    p_net=model_trained)\
+                                    .generate_ceb_sample()
+            
+            if len(samples) == 0:
+                print("Failed to generate sample for {}".format(ceb_imgp))
+                alread_failed = True
+            else:
+                for sample_group in samples:
+                    for i in range(len(sample_group)):
+                        csv_line = [self.sample_index, sample_group[i][1], i]
+                        self.save_img(sample_group[i][0])
+                        self.write_csv(csv_line)
+                        self.sample_index += 1
+            
+            if alread_failed:
                 faile_count += 1
-                continue
-            
-            # ！！！！！！！！！！！！十分重要！！！！！！！！！！！！！
-            # img_samples 是wfd的样本
-            # 利用 wfd的数据结构 [positive, mixed, negative, negative, negative]
-            # 在ceb中生成样本 加入到 [positive, mixed, negative ..., landmark] 中
-
-            count = len(img_samples)
-            while count > 0:
-                ceb_imgp, _, ceb_landmark = self.ceba.get_data(j)
-                j += 1
-
-                ceb_samples = ImgTransform(ceb_imgp, None, ceb_landmark)\
-                    .generate_ceb_sample()
-                if len(ceb_samples) == 0:
-                    print("CEB No sample generated for {}".format(ceb_imgp)) 
-                    continue
-                
-                img_samples[count-1].append(ceb_samples)
-                count -= 1
-                ceb_count += 1
-            
-            # 保存样本
-            # [positive, mixed, negative, ... ,landmark]
-            #  0         1      2        3 4   5          # 样本类型
-            for sample_group in img_samples:
-
-                for i in range(len(sample_group)):
-                    csv_line = [self.sample_index, sample_group[i][1], i]
-                    self.save_img(sample_group[i][0])
-                    self.write_csv(csv_line)
-                    self.sample_index += 1
 
         print("\n\n--------Final Report-----------")
         print("Total failed samples: {}".format(faile_count))
@@ -598,7 +599,7 @@ ldmk_path = r"C:\Users\lucyc\Desktop\celebA\list_landmarks_align_celeba.csv"
 basic_path = r"C:\Users\lucyc\Desktop\celebA\img_align_celeba\img_align_celeba"
 
 # mkdir face_loc_d
-os.makedirs(r"C:\Users\lucyc\Desktop\face_loc_d", exist_ok=True)
+os.makedirs(r"C:\Users\lucyc\Desktop\face_loc_dataset", exist_ok=True)
 
 cead = CELEBADriver(bbox_path, ldmk_path, basic_path)
 
@@ -610,7 +611,7 @@ wfd = WFDriver(clas_root_path, mat_path)
 cead.random_init()
 wfd.random_init()
 
-bds = BuildDataset(wfd, cead, r"C:\Users\lucyc\Desktop\face_loc_d", r"C:\Users\lucyc\Desktop\face_loc_dataset.csv")
+bds = BuildDataset(wfd, cead, r"C:\Users\lucyc\Desktop\face_loc_dataset", r"C:\Users\lucyc\Desktop\face_loc_dataset.csv")
 bds.generate_dataset()
 
 # belabelabelabela
