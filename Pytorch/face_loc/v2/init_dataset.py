@@ -341,7 +341,7 @@ class ImgTransform_R:
                 elif iou > 0.2 and iou < 0.55:
                     m_samples.append([x,y,w,h])
         
-        mid = len(p_samples) + len(n_samples) + len(m_samples) // 
+        mid = len(p_samples) + len(n_samples) + len(m_samples) // 33eeeeeeeeeeeeeeeeeeeeee
         p_samples = random.choices(p_samples, k=min)
         n_samples = random.choices(n_samples, k=min)
         m_samples = random.choices(m_samples, k=min)
