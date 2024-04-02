@@ -10,10 +10,10 @@ def random_color_shift(img):
 
     img = img.astype(np.int32) # 转换为整数类型
     # 生成色偏值，例如在-50到50的范围内随机选择
-    bias = np.random.randint(-25, 25, 3) # 对于RGB三个通道
+    bias = np.random.randint(-50, 50, 3) # 对于RGB三个通道
     # 应用色偏
     for i in range(3): # 对于每个颜色通道
-        img[:, :, i] = np.clip(img[:, :, i] + bias[i], 1, 254)
+        img[:, :, i] = np.clip(img[:, :, i] + bias[i], 0, 255)
     
     return img.astype(np.uint8)
         

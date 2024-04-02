@@ -193,8 +193,9 @@ def sliding_window(image, step_size, window_size, model_trained):
                 face_det, bbox, _ = model_trained(window_tensor)
 
             #result.append((x, y, window_size[0], window_size[1]))
+            probabilities = F.softmax(face_det, dim=1)
             
-            if face_det[0][0] > face_det[0][1]:
+            if probabilities[0][0] > probabilities[0][1]:
                 result.append((x, y, window_size[0], window_size[1], face_det[0][0] - face_det[0][1]))
                 # nx = bbox[0][0].item() * x_scale + x
                 # ny = bbox[0][1].item() * y_scale + y
@@ -224,9 +225,10 @@ def verify_face(image, model_trained):
 
     with torch.no_grad():
         face_det, _,_ = model_trained(image_tensor)
+    probabilities = F.softmax(face_det, dim=1)
+    print(probabilities)
 
-    if face_det[0][0] - face_det[0][1] > 2:
-        print(face_det[0][0] - face_det[0][1])
+    if probabilities[0][0] > probabilities[0][1]:
         return True
     else:
         return False
@@ -243,7 +245,7 @@ p_net.load_state_dict(net1.state_dict())
 p_net.eval()
 p_net.to(device)
 
-net2 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v2\face_loc_r_1_t.pth")
+net2 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v2\face_loc_r_1_NN.pth")
 
 r_net = RNet()
 r_net.load_state_dict(net2.state_dict())
