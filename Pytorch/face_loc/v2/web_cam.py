@@ -6,6 +6,7 @@ from torchvision import transforms
 import torch.nn as nn
 from PIL import Image
 import torch.nn.functional as F
+import time
 
 IMG_INPUT_SIZE = [12,12]
 device = torch.device("cuda:0" if torch.cuda.is_available() else "CPU")
@@ -26,6 +27,8 @@ transform_r = transforms.Compose([
                          std=[0.229, 0.224, 0.225])
 ])
 
+torch.cuda.empty_cache()
+torch.autograd.set_detect_anomaly(True)
 
 def nms(imgs_list, threshold):
 
@@ -195,8 +198,9 @@ def sliding_window(image, step_size, window_size, model_trained):
             #result.append((x, y, window_size[0], window_size[1]))
             probabilities = F.softmax(face_det, dim=1)
             
-            if probabilities[0][0] > probabilities[0][1]:
+            if probabilities[0][0] > 0.75:
                 result.append((x, y, window_size[0], window_size[1], face_det[0][0] - face_det[0][1]))
+
                 # nx = bbox[0][0].item() * x_scale + x
                 # ny = bbox[0][1].item() * y_scale + y
                 # nw = bbox[0][2].item() * x_scale
@@ -226,9 +230,8 @@ def verify_face(image, model_trained):
     with torch.no_grad():
         face_det, _,_ = model_trained(image_tensor)
     probabilities = F.softmax(face_det, dim=1)
-    print(probabilities)
 
-    if probabilities[0][0] > probabilities[0][1]:
+    if probabilities[0][0] > 0.80:
         return True
     else:
         return False
@@ -245,7 +248,7 @@ p_net.load_state_dict(net1.state_dict())
 p_net.eval()
 p_net.to(device)
 
-net2 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v2\face_loc_r_1_NN.pth")
+net2 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v2\face_loc_r_2_t.pth")
 
 r_net = RNet()
 r_net.load_state_dict(net2.state_dict())
@@ -287,8 +290,13 @@ while True:
         if verify_face(frame[y:y+h, x:x+w], r_net):
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             cv2.putText(frame, "Face: {:.2f}".format(score), (x, y+h+10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-    # 显示结果帧
-        
+    #显示结果帧
+
+    # for x, y, w, h in result:
+    #     x, y, w, h = int(x), int(y), int(w), int(h)
+    #     random = np.random.randint(0, 255, 3)
+    #     cv2.rectangle(frame, (x, y), (x+w, y+h), (int(random[0]), int(random[1]), int(random[2])), 2)
+
     # 打印边框数量
     cv2.putText(frame, "Number of faces: {}".format(len(result)), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
