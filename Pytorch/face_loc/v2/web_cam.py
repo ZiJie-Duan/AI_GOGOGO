@@ -198,7 +198,7 @@ def sliding_window(image, step_size, window_size, model_trained):
             #result.append((x, y, window_size[0], window_size[1]))
             probabilities = F.softmax(face_det, dim=1)
             
-            if probabilities[0][0] > 0.75:
+            if probabilities[0][0] > 0.7:
                 result.append((x, y, window_size[0], window_size[1], face_det[0][0] - face_det[0][1]))
 
                 # nx = bbox[0][0].item() * x_scale + x
@@ -241,7 +241,7 @@ def verify_face(image, model_trained):
 cap = cv2.VideoCapture(0)  # 0代表计算机的默认摄像头
 
 
-net1 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_3.pth")
+net1 = torch.load(r"C:\Users\lucyc\Desktop\AI_GOGOGO\Pytorch\face_loc\v1\face_loc_p_2.pth")
 
 p_net = PNet()
 p_net.load_state_dict(net1.state_dict())
